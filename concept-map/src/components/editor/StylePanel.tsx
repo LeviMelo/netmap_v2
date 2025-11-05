@@ -1,5 +1,5 @@
 import { useAppStore } from '../../lib/store'
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 
 const nodeShapes = ['round-rectangle','rectangle','ellipse','diamond','hexagon','octagon'] as const
 const lineStyles = ['solid','dashed','dotted'] as const
@@ -15,7 +15,13 @@ export default function StylePanel() {
     if (!cy) return { nodes: 0, edges: 0 }
     const sel = cy.$(':selected')
     return { nodes: sel.nodes().length, edges: sel.edges().length }
-  }, [cy, cy?.scratch('_selTick')]) // cheap recompute hook if needed
+  }, [cy, cy?.scratch('_selTick')])
+
+  const [edgeOffset, setEdgeOffset] = useState({ x: 0, y: 0 })
+  const [nodeFont, setNodeFont] = useState(12)
+  const [edgeFont, setEdgeFont] = useState(11)
+  const [nodeMax, setNodeMax] = useState(160)
+  const [edgeMax, setEdgeMax] = useState(200)
 
   const applyToSelection = (fn: (eles: cytoscape.CollectionReturnValue) => void) => {
     if (!cy) return
@@ -86,6 +92,19 @@ export default function StylePanel() {
             </select>
           </div>
 
+          <div className="flex items-center gap-2">
+            <label className="text-xs w-28">Node font</label>
+            <input type="number" min={8} max={32} value={nodeFont}
+              onChange={(e) => { const v=Number(e.target.value)||12; setNodeFont(v); applyToSelection(sel => sel.nodes().data('nFont', v)) }}
+              className="border rounded px-2 py-1 w-24 text-sm" />
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-xs w-28">Node label max</label>
+            <input type="number" min={80} max={400} value={nodeMax}
+              onChange={(e) => { const v=Number(e.target.value)||160; setNodeMax(v); applyToSelection(sel => sel.nodes().data('nLabelMax', v)) }}
+              className="border rounded px-2 py-1 w-24 text-sm" />
+          </div>
+
           <div className="h-px bg-gray-200" />
 
           <div className="flex items-center gap-2">
@@ -100,6 +119,32 @@ export default function StylePanel() {
             >
               {lineStyles.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <label className="text-xs w-28">Edge font</label>
+            <input type="number" min={8} max={28} value={edgeFont}
+              onChange={(e) => { const v=Number(e.target.value)||11; setEdgeFont(v); applyToSelection(sel => sel.edges().data('eFont', v)) }}
+              className="border rounded px-2 py-1 w-24 text-sm" />
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-xs w-28">Edge label max</label>
+            <input type="number" min={80} max={400} value={edgeMax}
+              onChange={(e) => { const v=Number(e.target.value)||200; setEdgeMax(v); applyToSelection(sel => sel.edges().data('eLabelMax', v)) }}
+              className="border rounded px-2 py-1 w-24 text-sm" />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <label className="text-xs w-28">Label offset X</label>
+            <input type="number" value={edgeOffset.x}
+              onChange={(e) => { const v=Number(e.target.value)||0; setEdgeOffset(prev=>({ ...prev, x:v })); applyToSelection(sel => sel.edges().data('labelOffsetX', v)) }}
+              className="border rounded px-2 py-1 w-24 text-sm" />
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-xs w-28">Label offset Y</label>
+            <input type="number" value={edgeOffset.y}
+              onChange={(e) => { const v=Number(e.target.value)||0; setEdgeOffset(prev=>({ ...prev, y:v })); applyToSelection(sel => sel.edges().data('labelOffsetY', v)) }}
+              className="border rounded px-2 py-1 w-24 text-sm" />
           </div>
         </div>
       </div>

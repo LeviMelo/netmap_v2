@@ -59,7 +59,7 @@ export default function Canvas() {
             'control-point-distance': 'data(cpd)',
             'control-point-weight': 0.5,
 
-            // Labels: horizontal w/ offsets
+            // Labels: horizontal with offsets
             'label': 'data(label)',
             'text-rotation': 'none',
             'text-wrap': 'wrap',
@@ -89,7 +89,7 @@ export default function Canvas() {
       pixelRatio: 1,
       minZoom: 0.2,
       maxZoom: 3,
-      layout: { name: 'cose', nodeDimensionsIncludeLabels: true },
+      layout: { name: 'cose', nodeDimensionsIncludeLabels: true, fit: true, animate: 'end' },
     })
 
     const eh = (cy as any).edgehandles({
@@ -97,7 +97,18 @@ export default function Canvas() {
       handleColor: '#2563eb',
       handleSize: 10,
       loopAllowed: () => false,
-      edgeParams: () => ({ data: { label: '', lineColor: '#334155', lineStyle: 'solid', eFont: 11, eLabelMax: 200, labelOffsetX: 0, labelOffsetY: 0, cpd: 0 } }),
+      edgeParams: () => ({
+        data: {
+          label: '',
+          lineColor: '#334155',
+          lineStyle: 'solid',
+          eFont: 11,
+          eLabelMax: 200,
+          labelOffsetX: 0,
+          labelOffsetY: 0,
+          cpd: 0,
+        },
+      }),
     })
 
     // Inline label editing (dbl)
@@ -107,41 +118,49 @@ export default function Canvas() {
       const val = ele.data('label') ?? ''
       const pos = kind === 'node' ? ele.renderedPosition() : toRendered(cy, ele.midpoint())
       useAppStore.getState().setEditing({
-        id: ele.id(), kind, value: val, renderedX: pos.x, renderedY: pos.y,
+        id: ele.id(),
+        kind,
+        value: val,
+        renderedX: pos.x,
+        renderedY: pos.y,
       })
     })
 
-    // Hover info bubble
+    // Hover info bubble (track only enter/leave; pan/zoom could be added later)
     cy.on('mouseover', 'node, edge', (ev) => {
       const ele = ev.target
       const kind = ele.isNode() ? 'node' : 'edge'
       const pos = kind === 'node' ? ele.renderedPosition() : toRendered(cy, ele.midpoint())
       if (kind === 'node') {
         setHover({
-          id: ele.id(), kind,
-          renderedX: pos.x, renderedY: pos.y,
+          id: ele.id(),
+          kind,
+          renderedX: pos.x,
+          renderedY: pos.y,
           headline: ele.data('label') || ele.id(),
-          detail: `shape=${ele.data('shape')}, fill=${ele.data('bg')}, text=${ele.data('textColor')}`
+          detail: `shape=${ele.data('shape')}, fill=${ele.data('bg')}, text=${ele.data('textColor')}`,
         })
       } else {
         const s = ele.source().data('label') || ele.source().id()
         const t = ele.target().data('label') || ele.target().id()
         setHover({
-          id: ele.id(), kind,
-          renderedX: pos.x, renderedY: pos.y,
+          id: ele.id(),
+          kind,
+          renderedX: pos.x,
+          renderedY: pos.y,
           headline: ele.data('label') || '(unlabeled)',
-          detail: `${s} → ${t} | color=${ele.data('lineColor')} style=${ele.data('lineStyle')}`
+          detail: `${s} → ${t} | color=${ele.data('lineColor')} style=${ele.data('lineStyle')}`,
         })
       }
     })
     cy.on('mouseout', 'node, edge', () => setHover(undefined))
 
-    // Problems + parallel separation
+    // Recompute: ONLY on structure changes (no 'data' to avoid recursion)
     const refreshAll = () => {
       recomputeParallelStyles(cy)
       setProblems(computeProblems(cy))
     }
-    cy.on('add remove data position', refreshAll)
+    cy.on('add remove position', refreshAll)
     refreshAll()
 
     setCy(cy)
@@ -150,7 +169,9 @@ export default function Canvas() {
     return () => {
       setCy(undefined)
       setHover(undefined)
-      try { eh.destroy() } catch {}
+      try {
+        eh.destroy()
+      } catch {}
       cy.destroy()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -175,10 +196,7 @@ export default function Canvas() {
 }
 
 function runLayout(cy: cytoscape.Core, kind: LayoutKind, routing: Routing) {
-  const curve =
-    routing === 'straight' ? 'straight' :
-    routing === 'curved' ? 'bezier' :
-    'bezier'
+  const curve = routing === 'straight' ? 'straight' : routing === 'curved' ? 'bezier' : 'bezier'
   cy.style().selector('edge').style('curve-style', curve).update()
 
   if (routing === 'orth') {
@@ -235,12 +253,84 @@ function runLayout(cy: cytoscape.Core, kind: LayoutKind, routing: Routing) {
 
 function seedElements() {
   return [
-    { data: { id: 'A', label: 'Node A', bg: '#2563eb', shape: 'round-rectangle', textColor: '#ffffff', nFont: 12, nLabelMax: 160 } },
-    { data: { id: 'B', label: 'Node B', bg: '#10b981', shape: 'round-rectangle', textColor: '#ffffff', nFont: 12, nLabelMax: 160 } },
-    { data: { id: 'C', label: 'Node C', bg: '#ef4444', shape: 'round-rectangle', textColor: '#ffffff', nFont: 12, nLabelMax: 160 } },
-    { data: { id: 'e1', source: 'A', target: 'B', label: 'leads to', lineColor: '#334155', lineStyle: 'solid', eFont: 11, eLabelMax: 200, labelOffsetX: 0, labelOffsetY: 0, cpd: 0 } },
-    { data: { id: 'e2', source: 'A', target: 'B', label: 'also relates to', lineColor: '#334155', lineStyle: 'dashed', eFont: 11, eLabelMax: 200, labelOffsetX: 0, labelOffsetY: 0, cpd: 0 } },
-    { data: { id: 'e3', source: 'B', target: 'C', label: 'causes',   lineColor: '#334155', lineStyle: 'solid', eFont: 11, eLabelMax: 200, labelOffsetX: 0, labelOffsetY: 0, cpd: 0 } },
+    {
+      data: {
+        id: 'A',
+        label: 'Node A',
+        bg: '#2563eb',
+        shape: 'round-rectangle',
+        textColor: '#ffffff',
+        nFont: 12,
+        nLabelMax: 160,
+      },
+    },
+    {
+      data: {
+        id: 'B',
+        label: 'Node B',
+        bg: '#10b981',
+        shape: 'round-rectangle',
+        textColor: '#ffffff',
+        nFont: 12,
+        nLabelMax: 160,
+      },
+    },
+    {
+      data: {
+        id: 'C',
+        label: 'Node C',
+        bg: '#ef4444',
+        shape: 'round-rectangle',
+        textColor: '#ffffff',
+        nFont: 12,
+        nLabelMax: 160,
+      },
+    },
+    {
+      data: {
+        id: 'e1',
+        source: 'A',
+        target: 'B',
+        label: 'leads to',
+        lineColor: '#334155',
+        lineStyle: 'solid',
+        eFont: 11,
+        eLabelMax: 200,
+        labelOffsetX: 0,
+        labelOffsetY: 0,
+        cpd: 0,
+      },
+    },
+    {
+      data: {
+        id: 'e2',
+        source: 'A',
+        target: 'B',
+        label: 'also relates to',
+        lineColor: '#334155',
+        lineStyle: 'dashed',
+        eFont: 11,
+        eLabelMax: 200,
+        labelOffsetX: 0,
+        labelOffsetY: 0,
+        cpd: 0,
+      },
+    },
+    {
+      data: {
+        id: 'e3',
+        source: 'B',
+        target: 'C',
+        label: 'causes',
+        lineColor: '#334155',
+        lineStyle: 'solid',
+        eFont: 11,
+        eLabelMax: 200,
+        labelOffsetX: 0,
+        labelOffsetY: 0,
+        cpd: 0,
+      },
+    },
   ]
 }
 
@@ -253,25 +343,36 @@ function toRendered(cy: any, model: { x: number; y: number }) {
 /** Assign symmetric control-point distances to parallel edges for visual separation. */
 function recomputeParallelStyles(cy: cytoscape.Core) {
   const buckets: Record<string, cytoscape.CollectionReturnValue> = {}
+
   cy.edges().forEach((e) => {
     const k = `${e.source().id()}->${e.target().id()}`
     ;(buckets[k] ??= cy.collection()).merge(e)
   })
+
   const step = 24 // px offset step
+
   Object.values(buckets).forEach((col) => {
     const n = col.length
     if (n <= 1) {
-      col[0]?.data('cpd', 0)
+      const only = col[0]
+      if (only) {
+        const prev = only.data('cpd')
+        if (prev !== 0) only.data('cpd', 0)
+      }
       return
     }
-    // symmetric sequence: for n=2 => [-12, +12]; n=3 => [-24, 0, +24]; n=4 => [-36, -12, +12, +36], etc.
+
+    // symmetric sequence: n=2 => [-12,+12]; n=3 => [-24,0,+24]; n=4 => [-36,-12,+12,+36]
     const offsets: number[] = []
-    const center = (n % 2 === 1) ? 0 : null
+    if (n % 2 === 1) offsets.push(0)
     const half = Math.floor(n / 2)
-    for (let i = 1; i <= half; i++) offsets.push(-((half - i + 1) * step))
-    if (center === 0) offsets.push(0)
-    for (let i = 1; i <= half; i++) offsets.push((i) * step)
-    // assign in stable order
-    col.forEach((e, idx) => e.data('cpd', offsets[idx] ?? 0))
+    for (let i = 1; i <= half; i++) offsets.unshift(-i * step)
+    for (let i = 1; i <= half; i++) offsets.push(i * step)
+
+    col.forEach((e, idx) => {
+      const next = offsets[idx] ?? 0
+      const prev = e.data('cpd')
+      if (prev !== next) e.data('cpd', next) // write only if changed
+    })
   })
 }

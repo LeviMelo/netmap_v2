@@ -10,7 +10,14 @@ export default function Toolbar() {
 
   useEffect(() => {
     refreshNames()
-  }, [])
+    // hash open: #open=name
+    const h = decodeURIComponent((location.hash||'').replace(/^#/, ''))
+    if (h.startsWith('open=')) {
+      const nm = h.slice(5)
+      if (nm) { setSelected(nm); setTimeout(loadLocal, 0) }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cy])
 
   const refreshNames = () => {
     const ks = Object.keys(localStorage).filter(k => k.startsWith(KEY_PREFIX))
@@ -41,7 +48,7 @@ export default function Toolbar() {
 
   const exportSVG = () => {
     if (!cy) return
-    const svg = cy.svg({ full: true, scale: 1, bg: 'white' } as any)
+    const svg = (cy as any).svg({ full: true, scale: 1, bg: 'white' })
     const blob = new Blob([svg], { type: 'image/svg+xml' })
     const a = document.createElement('a')
     a.href = URL.createObjectURL(blob)
@@ -67,7 +74,6 @@ export default function Toolbar() {
       const payload = JSON.parse(raw)
       cy.elements().remove()
       if (payload?.elements) cy.add(payload.elements)
-      // restore routing/layout intent if present (optional extension)
       cy.layout({ name: 'cose', fit: true, nodeDimensionsIncludeLabels: true }).run()
     } catch { alert('Invalid saved payload') }
   }
@@ -98,7 +104,6 @@ export default function Toolbar() {
 }
 
 function buildPayload(cy: cytoscape.Core) {
-  // Persist element data (including style data fields)
   const eles = cy.elements().jsons()
   return { elements: eles }
 }
