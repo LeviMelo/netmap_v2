@@ -2,12 +2,15 @@ import { useEffect, useRef } from 'react'
 import cytoscape from 'cytoscape'
 import elk from 'cytoscape-elk'
 import edgehandles from 'cytoscape-edgehandles'
+import svg from 'cytoscape-svg'
 import { useAppStore, type LayoutKind, type Routing } from '../../lib/store'
 import { computeProblems } from '../../modules/validate/problems'
+import LabelEditor from './LabelEditor'
+import InfoBubble from './InfoBubble'
 
-// register plugins (once per module load)
 elk(cytoscape)
 edgehandles(cytoscape)
+svg(cytoscape)
 
 export default function Canvas() {
   const ref = useRef<HTMLDivElement>(null)
@@ -15,31 +18,26 @@ export default function Canvas() {
   const layoutKind = useAppStore((s) => s.layout)
   const setCy = useAppStore((s) => s.setCy)
   const setProblems = useAppStore((s) => s.setProblems)
+  const setEditing = useAppStore((s) => s.setEditing)
+  const setHover = useAppStore((s) => s.setHover)
 
   useEffect(() => {
     if (!ref.current) return
 
     const cy = cytoscape({
       container: ref.current,
-      elements: [
-        // demo seed
-        { data: { id: 'A', label: 'Node A' } },
-        { data: { id: 'B', label: 'Node B' } },
-        { data: { id: 'C', label: 'Node C' } },
-        { data: { id: 'e1', source: 'A', target: 'B', label: 'leads to' } },
-        { data: { id: 'e2', source: 'B', target: 'C', label: 'causes' } },
-      ],
+      elements: seedElements(),
       style: [
         {
           selector: 'node',
           style: {
-            'background-color': '#2563eb',
-            'shape': 'round-rectangle',
+            'background-color': 'data(bg)',
+            'shape': 'data(shape)',
             'label': 'data(label)',
             'text-wrap': 'wrap',
-            'text-max-width': 140,
-            'font-size': 12,
-            'color': '#fff',
+            'text-max-width': 'data(nLabelMax)',
+            'font-size': 'data(nFont)',
+            'color': 'data(textColor)',
             'text-outline-width': 2,
             'text-outline-color': '#1f2937',
             'text-halign': 'center',
@@ -52,18 +50,23 @@ export default function Canvas() {
         {
           selector: 'edge',
           style: {
-            'curve-style': 'bezier', // default; may switch dynamically
+            'curve-style': 'bezier',
             'target-arrow-shape': 'triangle',
             'width': 2,
-            'line-color': '#334155',
-            'target-arrow-color': '#334155',
+            'line-color': 'data(lineColor)',
+            'target-arrow-color': 'data(lineColor)',
+            'line-style': 'data(lineStyle)',
+            'control-point-distance': 'data(cpd)',
+            'control-point-weight': 0.5,
 
-            // Labels: strictly horizontal
+            // Labels: horizontal w/ offsets
             'label': 'data(label)',
             'text-rotation': 'none',
             'text-wrap': 'wrap',
-            'text-max-width': 160,
-            'font-size': 11,
+            'text-max-width': 'data(eLabelMax)',
+            'text-margin-x': 'data(labelOffsetX)',
+            'text-margin-y': 'data(labelOffsetY)',
+            'font-size': 'data(eFont)',
             'color': '#ffffff',
             'text-background-opacity': 0.85,
             'text-background-color': '#0f172a',
@@ -94,18 +97,59 @@ export default function Canvas() {
       handleColor: '#2563eb',
       handleSize: 10,
       loopAllowed: () => false,
-      edgeParams: () => ({ data: { label: '' } }),
+      edgeParams: () => ({ data: { label: '', lineColor: '#334155', lineStyle: 'solid', eFont: 11, eLabelMax: 200, labelOffsetX: 0, labelOffsetY: 0, cpd: 0 } }),
     })
 
-    const updateProblems = () => setProblems(computeProblems(cy))
-    cy.on('add remove data position', updateProblems)
-    updateProblems()
+    // Inline label editing (dbl)
+    cy.on('dbltap', 'node, edge', (ev) => {
+      const ele = ev.target
+      const kind = ele.isNode() ? 'node' : 'edge'
+      const val = ele.data('label') ?? ''
+      const pos = kind === 'node' ? ele.renderedPosition() : toRendered(cy, ele.midpoint())
+      useAppStore.getState().setEditing({
+        id: ele.id(), kind, value: val, renderedX: pos.x, renderedY: pos.y,
+      })
+    })
+
+    // Hover info bubble
+    cy.on('mouseover', 'node, edge', (ev) => {
+      const ele = ev.target
+      const kind = ele.isNode() ? 'node' : 'edge'
+      const pos = kind === 'node' ? ele.renderedPosition() : toRendered(cy, ele.midpoint())
+      if (kind === 'node') {
+        setHover({
+          id: ele.id(), kind,
+          renderedX: pos.x, renderedY: pos.y,
+          headline: ele.data('label') || ele.id(),
+          detail: `shape=${ele.data('shape')}, fill=${ele.data('bg')}, text=${ele.data('textColor')}`
+        })
+      } else {
+        const s = ele.source().data('label') || ele.source().id()
+        const t = ele.target().data('label') || ele.target().id()
+        setHover({
+          id: ele.id(), kind,
+          renderedX: pos.x, renderedY: pos.y,
+          headline: ele.data('label') || '(unlabeled)',
+          detail: `${s} → ${t} | color=${ele.data('lineColor')} style=${ele.data('lineStyle')}`
+        })
+      }
+    })
+    cy.on('mouseout', 'node, edge', () => setHover(undefined))
+
+    // Problems + parallel separation
+    const refreshAll = () => {
+      recomputeParallelStyles(cy)
+      setProblems(computeProblems(cy))
+    }
+    cy.on('add remove data position', refreshAll)
+    refreshAll()
 
     setCy(cy)
     runLayout(cy, layoutKind, routing)
 
     return () => {
       setCy(undefined)
+      setHover(undefined)
       try { eh.destroy() } catch {}
       cy.destroy()
     }
@@ -124,16 +168,17 @@ export default function Canvas() {
       <div className="absolute bottom-2 left-2 text-xs text-gray-600 px-1.5 py-0.5 bg-white/70 rounded">
         Canvas
       </div>
+      <LabelEditor />
+      <InfoBubble />
     </div>
   )
 }
 
 function runLayout(cy: cytoscape.Core, kind: LayoutKind, routing: Routing) {
-  // Edge routing (style)
   const curve =
     routing === 'straight' ? 'straight' :
     routing === 'curved' ? 'bezier' :
-    'bezier' // orth uses ELK below
+    'bezier'
   cy.style().selector('edge').style('curve-style', curve).update()
 
   if (routing === 'orth') {
@@ -186,4 +231,47 @@ function runLayout(cy: cytoscape.Core, kind: LayoutKind, routing: Routing) {
       animate: 'end',
     }).run()
   }
+}
+
+function seedElements() {
+  return [
+    { data: { id: 'A', label: 'Node A', bg: '#2563eb', shape: 'round-rectangle', textColor: '#ffffff', nFont: 12, nLabelMax: 160 } },
+    { data: { id: 'B', label: 'Node B', bg: '#10b981', shape: 'round-rectangle', textColor: '#ffffff', nFont: 12, nLabelMax: 160 } },
+    { data: { id: 'C', label: 'Node C', bg: '#ef4444', shape: 'round-rectangle', textColor: '#ffffff', nFont: 12, nLabelMax: 160 } },
+    { data: { id: 'e1', source: 'A', target: 'B', label: 'leads to', lineColor: '#334155', lineStyle: 'solid', eFont: 11, eLabelMax: 200, labelOffsetX: 0, labelOffsetY: 0, cpd: 0 } },
+    { data: { id: 'e2', source: 'A', target: 'B', label: 'also relates to', lineColor: '#334155', lineStyle: 'dashed', eFont: 11, eLabelMax: 200, labelOffsetX: 0, labelOffsetY: 0, cpd: 0 } },
+    { data: { id: 'e3', source: 'B', target: 'C', label: 'causes',   lineColor: '#334155', lineStyle: 'solid', eFont: 11, eLabelMax: 200, labelOffsetX: 0, labelOffsetY: 0, cpd: 0 } },
+  ]
+}
+
+function toRendered(cy: any, model: { x: number; y: number }) {
+  const z = cy.zoom()
+  const p = cy.pan()
+  return { x: model.x * z + p.x, y: model.y * z + p.y }
+}
+
+/** Assign symmetric control-point distances to parallel edges for visual separation. */
+function recomputeParallelStyles(cy: cytoscape.Core) {
+  const buckets: Record<string, cytoscape.CollectionReturnValue> = {}
+  cy.edges().forEach((e) => {
+    const k = `${e.source().id()}->${e.target().id()}`
+    ;(buckets[k] ??= cy.collection()).merge(e)
+  })
+  const step = 24 // px offset step
+  Object.values(buckets).forEach((col) => {
+    const n = col.length
+    if (n <= 1) {
+      col[0]?.data('cpd', 0)
+      return
+    }
+    // symmetric sequence: for n=2 => [-12, +12]; n=3 => [-24, 0, +24]; n=4 => [-36, -12, +12, +36], etc.
+    const offsets: number[] = []
+    const center = (n % 2 === 1) ? 0 : null
+    const half = Math.floor(n / 2)
+    for (let i = 1; i <= half; i++) offsets.push(-((half - i + 1) * step))
+    if (center === 0) offsets.push(0)
+    for (let i = 1; i <= half; i++) offsets.push((i) * step)
+    // assign in stable order
+    col.forEach((e, idx) => e.data('cpd', offsets[idx] ?? 0))
+  })
 }

@@ -11,6 +11,23 @@ export type Problem = {
   info: string
 }
 
+export type EditTarget = {
+  id: string
+  kind: 'node' | 'edge'
+  value: string
+  renderedX: number
+  renderedY: number
+}
+
+export type HoverInfo = {
+  id: string
+  kind: 'node' | 'edge'
+  renderedX: number
+  renderedY: number
+  headline: string
+  detail?: string
+}
+
 type State = {
   cy?: cytoscape.Core
   setCy: (cy?: cytoscape.Core) => void
@@ -23,6 +40,12 @@ type State = {
 
   problems: Problem[]
   setProblems: (ps: Problem[]) => void
+
+  editing?: EditTarget
+  setEditing: (e?: EditTarget) => void
+
+  hover?: HoverInfo
+  setHover: (h?: HoverInfo) => void
 }
 
 export const useAppStore = create<State>((set) => ({
@@ -37,4 +60,10 @@ export const useAppStore = create<State>((set) => ({
 
   problems: [],
   setProblems: (problems) => set({ problems }),
+
+  editing: undefined,
+  setEditing: (editing) => set({ editing }),
+
+  hover: undefined,
+  setHover: (hover) => set({ hover }),
 }))
