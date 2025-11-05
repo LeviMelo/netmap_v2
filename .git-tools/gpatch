@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# gpatch: paste-and-apply a unified diff safely, with subdir detection
+set -euo pipefail
+
+# capture patch into a temp file
+tmp="$(mktemp -t gpatch.XXXXXX)"
+cat > "$tmp"
+size=$(wc -c <"$tmp" | tr -d ' ')
+if [ "$size" -eq 0 ]; then
+  echo "!! Empty patch on stdin. Aborting. Temp: $tmp" >&2
+  exit 2
+fi
+
+# find repo root and current path prefix (relative to root)
+if ! root="$(git rev-parse --show-toplevel 2>/dev/null)"; then
+  echo "!! Not inside a git repo. Temp: $tmp" >&2
+  exit 2
+fi
+prefix="$(git rev-parse --show-prefix 2>/dev/null || true)"  # may be empty
+
+echo "== gpatch: received $size bytes; temp=$tmp"
+echo "== dry-run (git apply --check)…"
+if ! git apply --check "$tmp" 2>/dev/null; then
+  echo "!! Dry-run failed. Leaving patch at: $tmp" >&2
+  exit 3
+fi
+
+# function: count modified files in working tree
+count_modified() { git status --porcelain=v1 | wc -l | tr -d ' '; }
+
+before_mods="$(count_modified)"
+
+echo "== apply attempt 1 (plain)…"
+if ! git apply --whitespace=fix "$tmp" 2>/dev/null; then
+  echo "!! apply attempt 1 failed (plain)."
+fi
+
+after_mods="$(count_modified)"
+
+# If nothing changed and we’re in a subdir, try with --directory=<prefix>
+if [ "$after_mods" -eq "$before_mods" ] && [ -n "$prefix" ]; then
+  echo "== no changes detected; retry with --directory=$prefix"
+  if ! git apply --whitespace=fix --directory="$prefix" "$tmp" 2>/dev/null; then
+    echo "!! apply attempt 2 failed (with --directory=$prefix)."
+  fi
+  after_mods="$(count_modified)"
+fi
+
+if [ "$after_mods" -eq "$before_mods" ]; then
+  echo "!! No changes applied. Possible path mismatch." >&2
+  echo "   - If your diff paths look like a/play.txt but your file lives under subdir," >&2
+  echo "     run from repo root or ensure --directory points to that subdir." >&2
+  echo "   - Inspect the patch with: sed -n '1,80p' $tmp" >&2
+  exit 4
+fi
+
+echo "== applied OK. You now have $((after_mods)) modified entry(ies) in the working tree."
+rm -f "$tmp"
